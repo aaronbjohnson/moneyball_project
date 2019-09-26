@@ -1,0 +1,232 @@
+---
+title: "MoneyBall Project"
+author: "Aaron Johnson"
+date: "March 28, 2019"
+output: html_document
+---
+
+```{r echo=FALSE, include=FALSE}
+library(dplyr)
+library(ggplot2)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In this project I will attempt to explore and recreate the problem faced by the Oakland athletics baseball team in 2002.
+
+### Background
+
+*Source: Wikipedia*
+
+The Oakland Athletics' 2002 season was the team's 35th in Oakland, California.
+
+It was the 102nd season in franchise history. The Athletics finished first in the American League West with a record of 103-59.
+
+The Athletics' 2002 campaign ranks among the most famous in franchise history. Following the 2001 season, Oakland saw the departure of three key players. Billy Beane, the team's general manager, responded with a series of under-the-radar free agent signings. The new-look Athletics, despite a comparative lack of star power, surprised the baseball world by besting the 2001 team's regular season record. The team is most famous, however, for winning 20 consecutive games between August 13 and September 4, 2002.[1] The Athletics' season was the subject of Michael Lewis's 2003 book Moneyball: The Art of Winning an Unfair Game (Lewis was given the opportunity to follow the team around throughout the season). A film adaptation of the book, also titled Moneyball, was released in 2011. 
+
+### Objective
+
+In the 2001-2002 offseason Oakland lost three of it's key free agent players (Jason Giambi, Johnny Damon, and Jason Isringhausen) to other teams. Due to the Oaklands's smaller revenues and lower salary budget, they are forced to look for undervalued players to replace the lost free agents.
+
+The three baseball statistics used in Moneyball to find replacement players are:
+
+* [Batting Average](https://en.wikipedia.org/wiki/Batting_average)
+* [On Base Percentage](https://en.wikipedia.org/wiki/On-base_percentage)
+* [Slugging Percentage](https://en.wikipedia.org/wiki/Slugging_percentage)
+
+With these formulas and the limited salary we have to work with, our guidelines for the replacement players are as follows:
+
+* The total combined salary of the three players can not exceed 15 million dollars.
+* Their combined number of At Bats (AB) needs to be equal to or greater than the lost players.
+* Their mean OBP has to equal to or greater than the mean OBP of the lost players
+
+Let's get started.
+
+### Data
+
+The data we'll be using comes from [Sean Lahman's](http://www.seanlahman.com/baseball-archive/statistics/) baseball database website. Let's go ahead and read in the data and check out the structure.
+
+```{r}
+batting <- read.csv('Batting.csv')
+head(batting)
+```
+
+```{r}
+str(batting)
+```
+Looking at this data we can see that three statistics we need are not in this data, but can be created using the stats we do have.
+
+### Feature Engineering
+
+As mentioned above, we'll need to create new statistics from out existing data. Again these statistics are: 
+
+* [Batting Average](https://en.wikipedia.org/wiki/Batting_average)
+* [On Base Percentage](https://en.wikipedia.org/wiki/On-base_percentage)
+* [Slugging Percentage](https://en.wikipedia.org/wiki/Slugging_percentage)
+
+#### Batting Average
+
+```{r}
+batting$BA <- batting$H / batting$AB
+```
+```{r}
+tail(batting$BA, 5)
+```
+#### On Base Percentage
+```{r}
+batting$OBP <- (batting$H + batting$BB + batting$HBP) / (batting$AB + batting$BB + batting$HBP + batting$SF)
+```
+#### Slugging Percentage
+
+This formula requires the 1B (Singles) statistic. This is not included in our dataset, but we can create it:
+```{r}
+batting$X1B <- batting$H - batting$X2B - batting$X3B - batting$HR
+batting$SLG <- (batting$X1B + (2 * batting$X2B) + (3 * batting$X3B) + (4 * batting$HR)) / batting$AB
+```
+
+Let's check the structure of the dataframe again:
+```{r}
+str(batting)
+```
+We can see that we now have all the required statistics we'll need in our data set.
+
+### Merging Salary Data with Batting Data
+
+In order to find our replacements, we'll need to merge our batting data with salary data for each player.
+
+#### Loading the salary data
+```{r}
+sal <- read.csv('Salaries.csv')
+```
+```{r}
+summary(sal)
+```
+```{r}
+summary(batting)
+```
+The batting data goes back to the year 1871, but the most recent records we have in the salary dataset are from the year 1985. We'll need to remove the batting data that occured before 1985.
+```{r}
+batting <- subset(batting, yearID > 1984 )
+```
+
+```{r}
+summary(batting)
+```
+Now we can merge the batting data with the salary data. We'll need to merge on *both* players and years since we have players playing multiple years.
+```{r}
+combo <- merge(batting,sal, by = c('playerID', 'yearID'))
+```
+```{r}
+summary(combo)
+```
+### Analyzing the Lost Players
+
+Let's create a subset of the three free agents that left the team so that we can easily analize their stats.
+
+```{r}
+lost_players <- subset(combo, playerID %in% c('giambja01', 'damonjo01', 'saenzol01'))
+```
+Since these players were lost in 2001, let's only look at the data from that year.
+```{r}
+lost_players <- lost_players %>% filter(yearID == 2001)
+```
+
+Let's educe the lost_players data frame to the essential variables.
+```{r}
+lost_players <- lost_players %>% select(playerID, H, X2B, X3B, HR, OBP, SLG, BA, AB)
+```
+```{r}
+lost_players
+```
+### Replacement Players
+
+Now, we'll go through our dataset to find replacements for our lost players. Again our requirements are as follows:
+
+* The total combined salary of the three players can not exceed 15 million dollars.
+* Their combined number of At Bats (AB) needs to be equal to or greater than the lost players.
+* Their mean OBP has to equal to or greater than the mean OBP of the lost players
+
+First, let's see what the combined **AB** is for our lost players.
+```{r}
+lost_combined_AB <- sum(lost_players$AB)
+print(lost_combined_AB)
+```
+
+Next, we'll see what their mean **OBP** is.
+```{r}
+lost_combined_mean<- mean(lost_players$OBP)
+print(lost_combined_mean)
+```
+
+Since this happened in the year 2001, we can subset our main dataset to just look at that year.
+```{r}
+combo <- combo %>% filter(yearID == 2001)
+```
+
+```{r}
+str(combo)
+```
+
+
+In order to get a sense of where our replacement players might come from, let's plot our data by **salary** and **OBP**
+
+```{r salaryVsOBP}
+ggplot(combo, aes(x=OBP, y=salary)) + geom_point(size=2)
+```
+
+We have quite a few records stacked at 0. This could just be represented by players who have not yet batted or did not make it to base. We also see that there are planty of records for **OBP** that are *both* well under a third of our salary cap, *and* are around our target mean *OBP* of 0.36. It makes sense then to subset our data to records where the **OBP** is greater than zero, and our **salary** is less than $8,000,000.
+
+```{r}
+combo <- subset(combo, salary < 8000000 & OBP > 0)
+str(combo)
+```
+
+Looking at the at-bat(AB) statistic, we probably want to target around 450, since the total **AB** for our **lost_players** was 1,469. 1,469 divided by 3 is about 489.6667, so we need to start our limit slightly below this. 450 seems like a good cutoff.
+
+```{r}
+combo <- subset(combo, AB >=450)
+str(combo)
+```
+We've narrowed down our options quite a bit. Let's use the dplyr library to quickly arrange what's left of combo.
+
+```{r}
+options <- head(arrange(combo, desc(OBP)), 10)
+```
+```{r}
+options %>% select(playerID, AB, salary, OBP)
+```
+
+Looking at this output we know we can't pick the first listed player as he is one of the players who left. But the next three on the list look like great replacements. Let's look at just these players to confirm that they meet all of our requirements:
+
+```{r}
+replacements <- subset(combo, playerID %in% c('heltoto01', 'berkmla01', 'gonzalu01'))
+```
+
+
+#### The total combined salary of the three players can not exceed 15 million dollars.
+```{r}
+sum(replacements$salary) <= 15000000
+```
+
+#### Their combined number of At Bats (AB) needs to be equal to or greater than the lost players.
+
+```{r}
+sum(replacements$AB) >= sum(lost_players$AB)
+```
+
+#### Their mean OBP had to equal to or greater than the mean OBP of the lost players
+
+```{r}
+mean(replacements$OBP) >= mean(lost_players$OBP)
+```
+
+### Conclusion
+
+We have successfully found three replacements for our lost players. Using the **batting average**, **on base percentage**, and **slugging percentage** stats, we were able to pick replacements who's combined salary was under our salary cap and who's **at bats** and **on base percentage** was better than or equal to our lost players.
+
+##### Assumptions
+We made a big assumption that every player in our data set (other than the lost players) was a free agent, and thus available as replacements. In reality we'd be restricted in our choices even further because a portion of the players would already be signed to other teams. To take this project further we could get free agent data for the year 2001 so that we could see who would have actually been available as a replacement.
